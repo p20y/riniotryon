@@ -13,7 +13,7 @@ function App() {
   const handleUpload = (fileOrUrl) => {
     setUserPhoto(fileOrUrl) // PhotoUpload now passes a URL string
     // In real app: upload to Supabase here
-    setTimeout(() => setStep('select'), 800)
+    // Removed auto-advance to let user "Save" manually
   }
 
   const handleSelect = (item) => {
@@ -31,7 +31,7 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          image_url: userPhoto, // This is now a generic Supabase URL string
+          image_url: userPhoto,
           style: selectedItem.name
         }),
       })
@@ -71,6 +71,17 @@ function App() {
         {step === 'upload' && (
           <div className="fade-in">
             <PhotoUpload onUpload={handleUpload} />
+            {userPhoto && (
+              <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                <button
+                  className="btn-primary"
+                  onClick={() => setStep('select')}
+                  style={{ minWidth: '200px' }}
+                >
+                  Save & Continue
+                </button>
+              </div>
+            )}
           </div>
         )}
 

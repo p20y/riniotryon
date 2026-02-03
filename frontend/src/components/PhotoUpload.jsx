@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import Webcam from 'react-webcam'
+import { uploadImage } from '../lib/storage'
 
 export function PhotoUpload({ onUpload }) {
     const [preview, setPreview] = useState(null)
@@ -14,17 +15,28 @@ export function PhotoUpload({ onUpload }) {
         }
     }
 
+    const [uploading, setUploading] = useState(false)
+
     const processFile = async (file) => {
-        const objectUrl = URL.createObjectURL(file)
-        setPreview(objectUrl)
+        // If coming from file input, we need to create preview. 
+        // If coming from camera, preview is already set (base64), but objectUrl won't hurt.
+        if (!preview) {
+            const objectUrl = URL.createObjectURL(file)
+            setPreview(objectUrl)
+        }
+
+        setUploading(true)
 
         try {
             // Upload to Supabase
             const publicUrl = await uploadImage(file)
-            onUpload(publicUrl) // Pass the URL to parent instead of file object
+            onUpload(publicUrl)
         } catch (error) {
-            alert('Upload failed! check console.')
-            // revert preview if needed, or retry logic
+            console.error(error)
+            alert('Upload failed: ' + error.message)
+            setPreview(null) // Reset on error
+        } finally {
+            setUploading(false)
         }
     }
 
@@ -45,8 +57,9 @@ export function PhotoUpload({ onUpload }) {
                 .then(res => res.blob())
                 .then(blob => {
                     const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" })
-                    onUpload(file)
+                    processFile(file)
                 })
+                .catch(err => console.error("Capture conversion error:", err))
             setMode('preview')
         }
     }, [webcamRef, onUpload])
@@ -66,7 +79,7 @@ export function PhotoUpload({ onUpload }) {
     return (
         <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
             <h3 style={{ marginBottom: '1.5rem', fontSize: '1.2rem' }}>
-                {preview ? 'Photo Ready' : 'Upload or Capture'}
+                {uploading ? 'Auto-Saving...' : (preview ? 'Photo Ready' : 'Upload or Capture')}
             </h3>
 
             {!preview && (
