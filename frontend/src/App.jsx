@@ -10,8 +10,8 @@ function App() {
   const [selectedItem, setSelectedItem] = useState(null)
   const [generatedImage, setGeneratedImage] = useState(null)
 
-  const handleUpload = (file) => {
-    setUserPhoto(file)
+  const handleUpload = (fileOrUrl) => {
+    setUserPhoto(fileOrUrl) // PhotoUpload now passes a URL string
     // In real app: upload to Supabase here
     setTimeout(() => setStep('select'), 800)
   }
@@ -24,16 +24,16 @@ function App() {
     setStep('processing')
 
     try {
-      // Create FormData to send to FastAPI
-      const formData = new FormData()
-      formData.append('image', userPhoto)
-      formData.append('style', selectedItem.name)
-
-      // Note: Assuming backend is running on localhost:8000
-      // In production, use env var
+      // Send JSON payload to FastAPI
       const response = await fetch('http://127.0.0.1:8000/api/generate', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_url: userPhoto, // This is now a generic Supabase URL string
+          style: selectedItem.name
+        }),
       })
 
       const data = await response.json()

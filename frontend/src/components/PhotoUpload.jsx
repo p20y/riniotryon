@@ -14,10 +14,18 @@ export function PhotoUpload({ onUpload }) {
         }
     }
 
-    const processFile = (file) => {
+    const processFile = async (file) => {
         const objectUrl = URL.createObjectURL(file)
         setPreview(objectUrl)
-        onUpload(file)
+
+        try {
+            // Upload to Supabase
+            const publicUrl = await uploadImage(file)
+            onUpload(publicUrl) // Pass the URL to parent instead of file object
+        } catch (error) {
+            alert('Upload failed! check console.')
+            // revert preview if needed, or retry logic
+        }
     }
 
     const handleDrop = (e) => {
