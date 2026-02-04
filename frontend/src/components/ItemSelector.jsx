@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { uploadImage } from '../lib/storage'
 
 const ITEMS = [
     { id: 'tshirt-1', name: 'Classic White Tee', category: 't-shirt', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=300&q=80' },
@@ -9,10 +10,45 @@ const ITEMS = [
 
 export function ItemSelector({ onSelect }) {
     const [selectedId, setSelectedId] = useState(null)
+    const [customItem, setCustomItem] = useState(null)
+    const fileInputRef = useRef(null)
 
     const handleSelect = (item) => {
         setSelectedId(item.id)
         onSelect(item)
+    }
+
+    const handleCustomUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+
+        try {
+            // Upload to Supabase (for UI display)
+            const publicUrl = await uploadImage(file)
+
+            // Convert to Base64 (for Fashn.ai API)
+            const toBase64 = file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+            const base64Data = await toBase64(file)
+
+            const newItem = {
+                id: 'custom-' + Date.now(),
+                name: 'Custom Garment',
+                category: 'auto', // let API detect
+                image: publicUrl,
+                base64: base64Data
+            }
+
+            setCustomItem(newItem)
+            handleSelect(newItem)
+        } catch (err) {
+            console.error(err)
+            alert("Failed to upload garment")
+        }
     }
 
     return (
@@ -24,6 +60,46 @@ export function ItemSelector({ onSelect }) {
                 gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                 gap: '1.5rem'
             }}>
+                {/* Upload Button */}
+                <div
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                        cursor: 'pointer',
+                        borderRadius: 'var(--radius-md)',
+                        border: '2px dashed var(--color-border)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '180px',
+                        background: 'rgba(255,255,255,0.05)'
+                    }}
+                >
+                    <span style={{ fontSize: '2rem' }}>📤</span>
+                    <span style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>Upload Own</span>
+                    <input type="file" ref={fileInputRef} onChange={handleCustomUpload} accept="image/*" hidden />
+                </div>
+
+                {customItem && (
+                    <div
+                        key={customItem.id}
+                        onClick={() => handleSelect(customItem)}
+                        style={{
+                            cursor: 'pointer',
+                            borderRadius: 'var(--radius-md)',
+                            overflow: 'hidden',
+                            border: selectedId === customItem.id ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
+                            position: 'relative',
+                            height: '180px'
+                        }}
+                    >
+                        <img src={customItem.image} alt="Custom" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', padding: '0.5rem' }}>
+                            <p style={{ fontSize: '0.8rem' }}>Custom</p>
+                        </div>
+                    </div>
+                )}
+
                 {ITEMS.map((item) => (
                     <div
                         key={item.id}

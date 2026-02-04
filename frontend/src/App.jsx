@@ -25,24 +25,31 @@ function App() {
 
     try {
       // Send JSON payload to FastAPI
+      console.log('Starting fetch request...')
       const response = await fetch('http://127.0.0.1:8000/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          image_url: userPhoto,
-          style: selectedItem.name
+          image_url: userPhoto.url,
+          image_base64: userPhoto.base64,
+          style: selectedItem.name,
+          garment_url: selectedItem.image,
+          garment_base64: selectedItem.base64,
+          category: selectedItem.category
         }),
       })
+      console.log('Fetch response received:', response.status)
 
       const data = await response.json()
+      console.log('Response data:', data)
 
       if (data.status === 'success') {
         setGeneratedImage(data.generated_image_url)
         setStep('result')
       } else {
-        alert('Something went wrong!')
+        alert('Error: ' + (data.message || 'Something went wrong!'))
         setStep('select')
       }
     } catch (error) {

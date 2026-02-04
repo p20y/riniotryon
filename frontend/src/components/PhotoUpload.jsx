@@ -28,9 +28,20 @@ export function PhotoUpload({ onUpload }) {
         setUploading(true)
 
         try {
-            // Upload to Supabase
+            // Upload to Supabase (for UI display)
             const publicUrl = await uploadImage(file)
-            onUpload(publicUrl)
+
+            // Convert to Base64 (for Fashn.ai API)
+            const toBase64 = file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+
+            const base64Data = await toBase64(file)
+
+            onUpload({ url: publicUrl, base64: base64Data })
         } catch (error) {
             console.error(error)
             alert('Upload failed: ' + error.message)
