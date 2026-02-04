@@ -2,18 +2,21 @@ import { useState } from 'react'
 import { PhotoUpload } from './components/PhotoUpload'
 import { ItemSelector } from './components/ItemSelector'
 import { ProcessingView } from './components/ProcessingView'
+import { ResultView } from './components/ResultView'
+import { STYLE_SETTINGS } from './data/catalog'
 import './index.css'
 
 function App() {
   const [step, setStep] = useState('upload') // upload, select, processing, result
   const [userPhoto, setUserPhoto] = useState(null)
   const [selectedItem, setSelectedItem] = useState(null)
+  const [selectedStyle, setSelectedStyle] = useState('studio')
   const [generatedImage, setGeneratedImage] = useState(null)
+  const [error, setError] = useState(null)
 
   const handleUpload = (fileOrUrl) => {
-    setUserPhoto(fileOrUrl) // PhotoUpload now passes a URL string
-    // In real app: upload to Supabase here
-    // Removed auto-advance to let user "Save" manually
+    setUserPhoto(fileOrUrl)
+    setError(null)
   }
 
   const handleSelect = (item) => {
@@ -22,10 +25,10 @@ function App() {
 
   const handleGenerate = async () => {
     setStep('processing')
+    setError(null)
 
     try {
-      // Send JSON payload to FastAPI
-      console.log('Starting fetch request...')
+      console.log('Starting generation request...')
       const response = await fetch('http://127.0.0.1:8000/api/generate', {
         method: 'POST',
         headers: {
@@ -34,13 +37,13 @@ function App() {
         body: JSON.stringify({
           image_url: userPhoto.url,
           image_base64: userPhoto.base64,
-          style: selectedItem.name,
+          style: selectedStyle,
           garment_url: selectedItem.image,
           garment_base64: selectedItem.base64,
-          category: selectedItem.category
+          category: selectedItem.category || selectedItem.bodyCategory || 'upper_body'
         }),
       })
-      console.log('Fetch response received:', response.status)
+      console.log('Response received:', response.status)
 
       const data = await response.json()
       console.log('Response data:', data)
@@ -49,12 +52,12 @@ function App() {
         setGeneratedImage(data.generated_image_url)
         setStep('result')
       } else {
-        alert('Error: ' + (data.message || 'Something went wrong!'))
+        setError(data.message || 'Something went wrong during generation')
         setStep('select')
       }
     } catch (error) {
-      console.error(error)
-      alert('Failed to connect to backend. Is it running?')
+      console.error('Generation error:', error)
+      setError('Failed to connect to the styling service. Please try again.')
       setStep('select')
     }
   }
@@ -64,28 +67,70 @@ function App() {
     setUserPhoto(null)
     setSelectedItem(null)
     setGeneratedImage(null)
+    setError(null)
+  }
+
+  const tryAnother = () => {
+    setStep('select')
+    setSelectedItem(null)
+    setGeneratedImage(null)
+    setError(null)
   }
 
   return (
-    <div className="container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '4rem 1rem' }}>
-      <header style={{ textAlign: 'center', marginBottom: '3rem' }}>
-        <h1 style={{ fontSize: '3rem', fontWeight: '800', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
-          Virtual <span style={{ color: 'var(--color-accent-primary)' }}>Try-On</span>
-        </h1>
+    <div className="app-container">
+      {/* Hero Header */}
+      <header className="header">
+        <div className="logo">
+          <span className="logo-icon">✨</span>
+          <span className="logo-text">StyleAI</span>
+        </div>
+        <p className="tagline">Virtual Try-On Powered by AI</p>
       </header>
 
-      <main style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>
+      {/* Progress Steps */}
+      <div className="progress-bar">
+        <div className={`progress-step ${step === 'upload' ? 'active' : (step !== 'upload' ? 'completed' : '')}`}>
+          <span className="step-number">1</span>
+          <span className="step-label">Upload Photo</span>
+        </div>
+        <div className="progress-line" />
+        <div className={`progress-step ${step === 'select' ? 'active' : (step === 'processing' || step === 'result' ? 'completed' : '')}`}>
+          <span className="step-number">2</span>
+          <span className="step-label">Choose Style</span>
+        </div>
+        <div className="progress-line" />
+        <div className={`progress-step ${step === 'result' ? 'active completed' : ''}`}>
+          <span className="step-number">3</span>
+          <span className="step-label">Get Results</span>
+        </div>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="error-banner fade-in">
+          <span>⚠️</span>
+          <p>{error}</p>
+          <button onClick={() => setError(null)}>×</button>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="main-content">
         {step === 'upload' && (
           <div className="fade-in">
+            <div className="section-header">
+              <h2>Upload Your Photo</h2>
+              <p>Take or upload a clear photo of yourself for the best results</p>
+            </div>
             <PhotoUpload onUpload={handleUpload} />
             {userPhoto && (
-              <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+              <div className="action-buttons">
                 <button
-                  className="btn-primary"
+                  className="btn-primary btn-large"
                   onClick={() => setStep('select')}
-                  style={{ minWidth: '200px' }}
                 >
-                  Save & Continue
+                  Continue to Styling →
                 </button>
               </div>
             )}
@@ -94,54 +139,84 @@ function App() {
 
         {step === 'select' && (
           <div className="fade-in">
+            <div className="section-header">
+              <h2>Select Your Look</h2>
+              <p>Choose from our curated collection or upload your own garment</p>
+            </div>
+
+            {/* User photo preview */}
+            <div className="user-preview">
+              <img src={userPhoto?.url || userPhoto?.base64} alt="Your photo" />
+              <button className="change-photo-btn" onClick={() => setStep('upload')}>
+                Change Photo
+              </button>
+            </div>
+
             <ItemSelector onSelect={handleSelect} />
-            <div style={{ marginTop: '2rem', textAlign: 'center', display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button onClick={() => setStep('upload')} style={{ background: 'transparent', color: 'var(--color-text-secondary)', padding: '12px 24px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                Back
+
+            {/* Style Settings */}
+            {selectedItem && (
+              <div className="style-settings glass-panel fade-in">
+                <h4>Photography Style</h4>
+                <div className="style-options">
+                  {STYLE_SETTINGS.map(style => (
+                    <button
+                      key={style.id}
+                      onClick={() => setSelectedStyle(style.id)}
+                      className={`style-option ${selectedStyle === style.id ? 'active' : ''}`}
+                    >
+                      <span className="style-name">{style.name}</span>
+                      <span className="style-desc">{style.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="action-buttons">
+              <button
+                className="btn-secondary"
+                onClick={() => setStep('upload')}
+              >
+                ← Back
               </button>
               <button
-                className="btn-primary"
+                className="btn-primary btn-large"
                 onClick={handleGenerate}
                 disabled={!selectedItem}
-                style={{ opacity: selectedItem ? 1 : 0.5, pointerEvents: selectedItem ? 'auto' : 'none' }}
               >
-                Generate Look
+                Generate My Look ✨
               </button>
             </div>
           </div>
         )}
 
         {step === 'processing' && (
-          <div className="fade-in" style={{ display: 'flex', justifyContent: 'center' }}>
-            <ProcessingView />
+          <div className="fade-in">
+            <ProcessingView
+              userPhoto={userPhoto}
+              selectedItem={selectedItem}
+            />
           </div>
         )}
 
         {step === 'result' && (
-          <div className="fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
-            <h3 style={{ marginBottom: '1.5rem' }}>Your Personalized Look</h3>
-            <img
-              src={generatedImage}
-              alt="Generated Result"
-              style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-strong)', marginBottom: '2rem' }}
+          <div className="fade-in">
+            <ResultView
+              generatedImage={generatedImage}
+              userPhoto={userPhoto}
+              selectedItem={selectedItem}
+              onTryAnother={tryAnother}
+              onStartOver={reset}
             />
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button
-                className="btn-primary"
-                onClick={() => alert('Email functionality coming next!')}
-              >
-                Email Me This
-              </button>
-              <button
-                onClick={reset}
-                style={{ background: 'transparent', color: 'var(--color-text-primary)', padding: '12px 24px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}
-              >
-                Try Another
-              </button>
-            </div>
           </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="footer">
+        <p>Powered by AI • Built for Fashion</p>
+      </footer>
     </div>
   )
 }

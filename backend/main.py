@@ -2,10 +2,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
-import asyncio # Keep asyncio for sleep if needed (though not for polling anymore) or blocking
-import httpx # Remove if unused, but safety first
+from google.genai import types
 import base64
-import time
 import os
 from dotenv import load_dotenv
 
@@ -17,7 +15,7 @@ app = FastAPI()
 # Allow CORS for Frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,111 +38,95 @@ class ImageURLRequest(BaseModel):
     garment_base64: str = None
     category: str = "upper_body"
 
+# Helper to decode base64 to raw bytes
+def decode_base64(b64_string):
+    if not b64_string:
+        return None
+    if "base64," in b64_string:
+        b64_string = b64_string.split("base64,")[1]
+    return base64.b64decode(b64_string)
+
+# Style settings for different photography looks
+STYLE_PROMPTS = {
+    "studio": "professional studio lighting, clean white or neutral background, high-end fashion photography",
+    "outdoor": "natural daylight, outdoor urban or nature setting, lifestyle photography",
+    "lifestyle": "casual everyday setting, warm natural lighting, candid lifestyle photography",
+    "editorial": "high fashion editorial style, dramatic lighting, magazine-quality photography"
+}
+
 @app.post("/api/generate")
 async def generate_image(request: ImageURLRequest):
     print("Request received in generate_image endpoint (Gemini)")
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-             print("ERROR: GEMINI_API_KEY is missing!")
-             raise HTTPException(status_code=500, detail="Missing Gemini API Key.")
+            print("ERROR: GEMINI_API_KEY is missing!")
+            raise HTTPException(status_code=500, detail="Missing Gemini API Key.")
 
-        print(f"Generating with Gemini 2.5 Flash Image...")
-        
+        print(f"Generating with Gemini 2.0 Flash Exp Image Generation...")
+        print(f"Style: {request.style}, Category: {request.category}")
+
         client = genai.Client(api_key=api_key)
-        
-        # Prepare Inputs
-        # Convert base64 strings to strict bytes if needed, or pass as is depending on SDK SDK
-        # The SDK typically handles PIL images or specific types. 
-        # For simplicity in this 'nano' migration, we'll try to pass the base64 data directly if supported
-        # or decoded bytes. Documentation suggests types.Part.from_bytes.
-        
-        from google.genai import types
-        import base64
 
-        # Helper to decode base64 to raw bytes
-        def decode_base64(b64_string):
-            if "base64," in b64_string:
-                b64_string = b64_string.split("base64,")[1]
-            return base64.b64decode(b64_string)
-
-        model_image_bytes = decode_base64(request.image_base64 if request.image_base64 else "") 
-        # Note: If image_base64 is missing we should fail or fetch URL. 
-        # Assuming frontend always sends base64 now as per previous step.
-        
-        garment_image_bytes = decode_base64(request.garment_base64 if request.garment_base64 else "")
+        model_image_bytes = decode_base64(request.image_base64)
+        garment_image_bytes = decode_base64(request.garment_base64)
 
         if not model_image_bytes or not garment_image_bytes:
-             raise HTTPException(status_code=400, detail="Missing image data (Base64 required).")
+            raise HTTPException(status_code=400, detail="Missing image data (Base64 required).")
 
-        prompt = f"Generate a realistic photorealistic image of the person in the first image wearing the garment in the second image. The category is {request.category}. Ensure the pose and identity are preserved. High quality, 4k."
+        # Get style-specific prompt additions
+        style_desc = STYLE_PROMPTS.get(request.style, STYLE_PROMPTS["studio"])
+        category_desc = request.category.replace("_", " ")
 
-        # Switching to Gemini 2.0 Flash (Experimental) to avoid Quota/Method issues
-        # This model is multi-modal and should handle the request either by generating an image or text
-        # We need to ensure we request an IMAGE generation specifically if possible, 
-        # but standard Flash generates text. 
-        # However, for VTON we need an image.
-        # Let's try 'gemini-2.0-flash-exp' and ask for an image.
-        # If it returns text, we might need a different approach (Imagen).
-        # But 'nano-banana' (2.5 flash image) is the one we want. 
-        # Since 2.5 flash image failed on generate_content, and Pro failed on Quota.
-        
-        # Let's try the direct 'gemini-2.0-flash-exp' which often has image generation capabilities enabled in preview.
-        # Or better: 'gemini-2.0-flash'
-        
+        # Build the comprehensive prompt for virtual try-on
+        prompt = f"""Create a stunning, photorealistic virtual try-on image.
+
+TASK: Generate an image of the person from the first photo wearing the clothing item from the second photo.
+
+CRITICAL REQUIREMENTS:
+1. IDENTITY: Preserve the person's exact face, facial features, skin tone, hair, and body proportions
+2. GARMENT: Show the clothing item from the second image on the person naturally
+3. FIT: The garment should fit the person's body shape realistically with proper draping and folds
+4. POSE: Maintain the person's natural pose or adjust slightly for a flattering look
+
+STYLE: {style_desc}
+
+TECHNICAL SPECS:
+- Category: {category_desc} clothing
+- Quality: Ultra high resolution, 4K quality
+- Lighting: Realistic shadows and highlights that match the garment's fabric
+- Focus: Sharp focus on the person and garment
+
+OUTPUT: A single beautiful, inspiring fashion photograph that would make someone want to purchase this item."""
+
+        # Use gemini-2.0-flash-exp-image-generation which supports image output
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.0-flash-exp-image-generation',
             contents=[
                 prompt,
                 types.Part.from_bytes(data=model_image_bytes, mime_type="image/jpeg"),
                 types.Part.from_bytes(data=garment_image_bytes, mime_type="image/jpeg")
-            ]
+            ],
+            config=types.GenerateContentConfig(
+                response_modalities=['image', 'text']
+            )
         )
-        
-        # Validate output
-        if not response.text: 
-            # If no text, maybe it has image parts?
-             pass 
-        
-        # Actually proper image generation model returns an image object not text.
-        # Let's look at the response structure for image generation models.
-        # It usually returns a generated image object.
-        
-        # If we use generate_images:
-        # response = client.models.generate_images(...) -> response.generated_images[0].image.image_bytes
-        
-        # Since I am unsure if 'generate_images' supports input images in the prompt for this specific SDK version,
-        # I will rely on the fact that Gemini is native multi-modal.
-        # Let's try `generate_images` first IF the documented API supports it.
-        # If not, I will use `generate_content`. 
-        # Given "Flash Image" name, it's likely a dedicated image generation model.
-        
-        # Let's stick to a safe implementation: `generate_content` is the standard for Gemini.
-        # But `generate_images` is for Imagen... wait, "gemini-2.5-flash-image" IS a Gemini model.
-        # It should work with `generate_content`.
-        
-        # However, for purely image output, we want the raw bytes.
-        # Let's assume `generate_content` returns an InlineData part with the image.
-        
-        # Let's try to extract image from response.
-        # If response.parts exists.
-        
-        # SIMPLIFIED APPROACH for robustness:
-        # I will assume it behaves like a standard Gemini generation where output can be image.
-        
-        # ... Wait, I'll use the specific `generate_images` if available, but since I can't check docs live easily for this brand new model:
-        # I will use `client.models.generate_image` (singular) or content.
-        
-        # Let's Write code that tries `generate_content` as it's the most generic 'Gemini' way.
-        
+
+        # Extract image from response
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
-                if part.inline_data:
+                if part.inline_data and part.inline_data.data:
                     # Found image
                     b64_img = base64.b64encode(part.inline_data.data).decode('utf-8')
-                    output_url = f"data:image/jpeg;base64,{b64_img}"
+                    mime_type = part.inline_data.mime_type or "image/png"
+                    output_url = f"data:{mime_type};base64,{b64_img}"
                     print("Generation complete (Inline Data)")
                     return {"status": "success", "generated_image_url": output_url, "original_image_url": request.image_url}
+
+        # If no image found, check if there's text explaining why
+        if response.text:
+            print(f"Model returned text instead of image: {response.text}")
+            return {"status": "error", "message": f"Model response: {response.text}"}
 
         print("No image found in response.")
         return {"status": "error", "message": "No image generated."}
